@@ -1,4 +1,4 @@
-# Code and data from threat learning modeling paper by Abend, et al. (eLife)
+# Code and data from threat learning modeling paper by Abend, Burk et al. (eLife)
 This repository includes two data items from our eLife paper on modeling threat learning.
 First, one Excel file with deidentified data for a subsample (n=38, healthy and anxious youth).
 The Excel sheet (modeling_data_upload.xlsx) includes 3 sheets:
