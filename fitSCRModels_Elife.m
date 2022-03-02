@@ -1,7 +1,7 @@
-%% These functions fit the 9 models (8 versions of Rescorla-Wagner(RW) and hybrid Pearce-Hall(PH) to SCR data for Abend et al., 2021
+%% These functions fit the models (variants of Rescorla-Wagner (RW) and hybrid Pearce-Hall (PH) models) to SCR data for Abend et al., 2022 (eLife)
 
 
-% Below is an example of how one would fit 8 RW models to a dataset:
+% Below is an example of how one would fit RW models to a dataset:
 
 
 % For the 8 RW models, a matrix was used to define the presence of
@@ -227,5 +227,175 @@ for trial = 1 : length(scr)
     ll = ll + abs(v(csType(trial), trial) - scr(trial)).^2;
 end
 end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%For fitting Li et al., models
+function [ll, v, alpha_all, vals_all, a_pos, a_neg, warningTracker, b] = fitSCRfPHG2(params, scr, us, csType, vi, mu, modelinfo)
+%saves associability parameters trial by trial 9.27.21. DB
+%modified to match Li et al., 2011 models 02.02.2022
+v(1:2,1) = vi;
+
+alphpos = 1;
+alphneg = 1;
+a_pos=zeros(length(scr),1);
+a_neg=zeros(length(scr),1);
+alpha_all=zeros(length(scr),1);
+
+for trial = 1 : length(scr)
+        
+    %RPE(trial) = us(trial) - v(csType(trial), trial); %added for troubleshooting
+    
+    %rpe = us(trial) - v(csType(trial), trial); %original
+    
+    %making us binary 02.15.2022 for Li et al. models:
+    if us(trial)>0
+        r=1;
+    else
+        r=0;
+    end
+    
+    rpe = r - v(csType(trial), trial);
+    
+    if csType(trial) == 1
+        v(1, trial+1) = v(1, trial) + params(1)*alphpos*(rpe) + mu(trial); %params(1)=kappa for cs+
+        v(2, trial+1) = v(2, trial) + params(2)*alphneg*(rpe) + mu(trial); %params(2)=kappa for cs-
+        
+        alphpos = (1-params(3))*alphpos + abs(rpe)*params(3); %params(3)=gamma cs+
+        alphneg = (1-params(4))*alphneg + abs(rpe)*params(4); %params(4)=gamma cs-
+    else
+        v(1, trial+1) = v(1, trial) + mu(trial);
+        v(2, trial+1) = v(2, trial) + mu(trial);
+    end
+    
+    a_pos(trial,1)=alphpos; %trial by trial update of each alpha for cs+ and cs-
+    a_neg(trial,1)=alphneg;
+end
+
+ll = 0;
+
+%Interleaving Vs and Alphas for CS+ and CS- trials to do just 1 regression :
+for trial = 1 : length(scr)
+    if csType(trial)==2
+        alpha_all(trial,1)=a_neg(trial);
+    elseif csType(trial)==1
+        alpha_all(trial,1)=a_pos(trial);
+    end
+    vals_all(trial,1)=v(csType(trial), trial);
+    
+end
+
+%with regression for both (use one of these at a time):
+if modelinfo==1
+    [b, bint, r]=regress(scr, [ones(length(scr),1), vals_all]); %V
+    %return betas separately
+elseif modelinfo==2
+    [b, bint, r]=regress(scr, [ones(length(scr),1), alpha_all]); %a
+elseif modelinfo==3
+    [b, bint, r]=regress(scr, [ones(length(scr),1), alpha_all, vals_all]); %V+a
+end
+ll=sum(r.^2); %minimize the square of the residuals if using regression in function
 
 
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%For fitting Tzovara et al., models
+%wrapper function for compatibility with fminsearch:
+function [ll] = fitSCRUnc2(params, scr, us, ucData, csType, vi, habituationFlag)
+
+[ll, ~] = fitSCRfUnc2(params, scr, us, ucData, csType, vi, habituationFlag);
+end
+
+function [ll, yhat] = fitSCRfUnc2(params, scr, scr_all, ucData, csType, vi, habituationFlag)
+
+%scr is only CS+ trials (length 10)
+%scr_all is CS+ and CS- trials (length 20)
+%csType is length 20 for all trials 1=CS+ 2=CS-
+
+%note that ucData is the same as the input us in the original version of
+%this function above.
+if csType(1) == 3
+   decay = params(3);
+end
+
+if habituationFlag==1
+    exp1=params(5);
+end
+
+%CS+ params
+v_CSP   = zeros(1, length(scr) + 1);
+E_theta_CSP = zeros(1,length(scr) + 1);
+v_CSP(1) = 0;
+beta_one_CSP = params(1);
+beta_knot_CSP = params(2);
+non_us = ucData == 0; %ucData is binary so for non_us 1=CS+ reinforced with UCS 0=not reinforced 80/20 schedule
+yhat_CSP = zeros(length(scr)+1,1);
+alpha_CSP = zeros(length(scr),1); alpha_CSP(1) = 1;
+beta_CSP = zeros(length(scr),1); beta_CSP(1) = 1;
+
+%CS- params
+v_CSN   = zeros(1, length(scr) + 1);
+E_theta_CSN = zeros(1,length(scr) + 1);
+v_CSN(1) = 0;
+beta_one_CSN = params(3);
+beta_knot_CSN = params(4);
+non_stim=ones(1,length(ucData)); %cs- never reinforced
+yhat_CSN = zeros(length(scr)+1,1);
+alpha_CSN = zeros(length(scr),1); alpha_CSN(1) = 1; %not sure if these should be initialized at 1 or 0 (Bayesian learner in Tzovara 2018)
+beta_CSN = zeros(length(scr),1); beta_CSN(1) = 1;
+
+%CS+ (csType=1), compute alpha and beta:
+for trial = 1 : length(scr)  
+    alpha_CSP(trial+1) = alpha_CSP(trial) + ucData(trial); %goes up every time ucs was delivered
+    beta_CSP(trial+1) = beta_CSP(trial) + non_us(trial); %beta doesn't change when ucs delivered, goes up by 1 otherwise
+
+    E_theta_CSP(trial + 1) = (alpha_CSP(trial))/(alpha_CSP(trial) + beta_CSP(trial));
+    v_CSP(trial+1) = -log(alpha_CSP(trial) + beta_CSP(trial));
+end
+
+%for CS- only increment beta, it was never reinforced with ucs
+%alpha stays at 1 but beta increments up
+%CS- (csType=2)
+for trial = 1 : length(scr)  
+    alpha_CSN(trial+1) = 1; %cs- never reinforced
+    beta_CSN(trial+1) = beta_CSN(trial) + non_stim(trial); %just increments every trial
+    E_theta_CSN(trial + 1) = (alpha_CSN(trial))/(alpha_CSN(trial) + beta_CSN(trial));
+    v_CSN(trial+1) = -log(alpha_CSN(trial) + beta_CSN(trial));
+end
+
+
+if habituationFlag==1
+    %add habituation to CS+
+    
+    vec = [0 0]; n = 2; %don't habituate on first 2 trials?
+    %vec = zeros(n,1)'; %other option for this
+    
+    v_CSP = v_CSP.*exp(-exp1*([vec 1:(length(v_CSP) - n)])); %habituation
+    %v=v*exp(alpha(k-ko)^t) ko=2. ko not fit to individual subjects
+end
+
+ll = 0;
+
+%compute yhat for CS+ and CS- combined by interleaving yhat from CSP and CS-
+for trial = 1:length(scr)
+    z_CSP(trial) = v_CSP(trial) + E_theta_CSP(trial);
+    z_CSN(trial) = v_CSN(trial) + E_theta_CSN(trial);
+    yhat_CSP(trial) = beta_one_CSP * z_CSP(trial) + beta_knot_CSP;
+    yhat_CSN(trial) = beta_one_CSN * z_CSN(trial) + beta_knot_CSN;
+end
+
+yhat_CSP=yhat_CSP(1:10);
+yhat_CSN=yhat_CSN(1:10);
+
+%combine CSP and CSN yhats into one yhat, properly interleaved:
+csp_idx=find(csType==1);
+csn_idx=find(csType==2);
+yhat(csp_idx,1)=yhat_CSP;
+yhat(csn_idx,1)=yhat_CSN;
+
+for trial=1:length(scr_all)    
+    %calculate ll
+    ll = ll + ((yhat(trial) - scr_all(trial)).^2);
+end
+
+yhat(1) = vi;
+end
