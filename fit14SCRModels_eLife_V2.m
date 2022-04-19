@@ -1,4 +1,5 @@
-%% These functions fit the 9 models (8 versions of Rescorla-Wagner(RW) and hybrid Pearce-Hall(PH) to SCR data for Abend et al., 2021
+%% These functions fit models (variants of Rescorla-Wagner (RW) and hybrid Pearce-Hall (PH) models) to SCR data as used in "Computational Modeling of 
+%% Threat Learning Reveals Links with Anxiety and Neuroanatomy in Humans" by Abend, Burk, et al., 2022 (eLife)
 
 
 % Below is an example of how one would fit 8 RW models to a dataset:
